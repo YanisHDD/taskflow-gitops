@@ -171,7 +171,8 @@ On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le s
    ```bash
    kubectl argo rollouts abort taskflow -n taskflow
    ```
-   L'effet a été immédiat : le pod 2.1.0 a été coupé (`ScaledDown`), et 100% des requêtes sont revenues instantanément sur la version stable 2.0.0 (`40 version=2.0.0 http=200`). Le rollout est passé en statut `Degraded`.
+   L'effet a été immédiat : le pod 2.1.0 a été coupé (`ScaledDown`), et 100% des requêtes sont revenues instantanément sur la version stable 2.0.0 (`40 version=2.0.0 http=200`).
+   Dans Argo CD, le Rollout passe alors en statut **Degraded** (avec l'événement explicite : `RolloutAborted: Rollout aborted update to revision 4`).
 
 ---
 
@@ -188,10 +189,10 @@ On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le s
   Pour TaskFlow, **Canary** est le choix le plus pertinent car l'application est légère et le Canary permet de valider le comportement avec du vrai trafic par petits paliers sans doubler la facture d'hébergement. Si le métier refuse catégoriquement qu'un seul utilisateur voie une erreur, on privilégiera Blue-Green.
 
 #### B. « Pendant un canary, vous faites un abort. Que montrent le Rollout, Argo CD et Git, et que faut-il faire ensuite ? »
-- **Ce que montre le Rollout :** Il affiche le statut **`Degraded`**. Il a mis la révision Canary à l'écart (`ScaledDown`) et a réactivé 100% du trafic sur l'ancienne révision stable.
-- **Ce que montre Argo CD :** Il affiche l'application en statut **`Degraded`** (car la ressource Rollout dans le cluster est en échec d'avancement).
-- **Ce que montre Git :** Sur Git, la branche `main` contient toujours le commit qui demande de déployer l'image buggée `2.1.0` ! Le cluster et Git ne sont donc plus alignés.
-- **Ce qu'il faut faire ensuite :** Il faut impérativement faire un **`git revert`** (ou une Pull Request de rollback) sur Git pour remettre l'image `2.0.0` sur `main`. Sinon, au prochain sync automatique d'Argo CD ou au prochain déploiement, Argo CD essaiera à nouveau d'appliquer la 2.1.0 buggée. C'est la règle d'or du GitOps : Git doit toujours être corrigé pour refléter l'état voulu.
+- **Ce que montre le Rollout :** Il affiche le statut **`Degraded`**. Il a mis la révision Canary à l'écart (`ScaledDown`) et a réactivé 100% du trafic sur l'ancienne révision stable (4 pods en 2.0.0).
+- **Ce que montre Argo CD :** L'application et le Rollout passent en statut **`Degraded`** (cœur brisé). Dans l'onglet Events du Rollout, on voit bien l'événement : `RolloutAborted: Rollout aborted update to revision 4`.
+- **Ce que montre Git :** Sur Git, la branche `main` contient toujours le commit qui demande de déployer l'image buggée `2.1.0` ! Le cluster et Git sont donc désynchronisés.
+- **Ce qu'il faut faire ensuite :** Il faut impérativement faire un **`git revert`** (ou une Pull Request de rollback) sur Git pour remettre l'image `2.0.0` sur `main`. Dès que Git aura à nouveau la version 2.0.0, Argo CD va se resynchroniser, le Rollout sortira de l'état avorté et redeviendra **100% `Healthy`** (cœur vert). C'est la règle d'or du GitOps : Git doit toujours être corrigé pour refléter l'état voulu.
 
 ---
 
@@ -222,3 +223,5 @@ On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le s
   ![Canary abort and recovery](docs/screenshots/30-canary-abort-and-recovery.png)
 - **Rollout en statut Degraded après l'abort :**  
   ![Canary rollout degraded](docs/screenshots/31-canary-rollout-degraded-status.png)
+- **Événement RolloutAborted et statut Degraded dans Argo CD :**  
+  ![Argo CD Degraded Event](docs/screenshots/32-argocd-rollout-aborted-event-degraded.png)
