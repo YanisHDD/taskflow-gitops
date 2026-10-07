@@ -1,5 +1,6 @@
-# Blue-Green : la nouvelle version démarre à côté de l'ancienne, sur le service
-# taskflow-preview. Le service taskflow (production) ne bascule qu'à la promotion.
+# Canary : la nouvelle version reçoit une part croissante du trafic.
+# Sans maillage de service, la part de trafic suit la proportion de pods :
+# 4 réplicas → 25 % = 1 pod sur 4.
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
@@ -40,8 +41,13 @@ spec:
             limits:
               memory: 256Mi
   strategy:
-    blueGreen:
-      activeService: taskflow
-      previewService: taskflow-preview
-      autoPromotionEnabled: false
-      scaleDownDelaySeconds: 30
+    canary:
+      steps:
+        - setWeight: 25
+        - pause: {}
+        - setWeight: 50
+        - pause:
+            duration: 60s
+        - setWeight: 75
+        - pause:
+            duration: 30s
