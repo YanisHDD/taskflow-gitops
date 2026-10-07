@@ -101,3 +101,45 @@ Dès qu'on a fait le \scale --replicas=1\ à la main, l'application est passée 
   ![Argo CD 1.0.0 retour](docs/screenshots/11-revert-argocd-synced-1.0.0.png)
 - **Détail du Pod réaligné en 1.0.0 :**  
   ![Pod 1.0.0 retour](docs/screenshots/12-revert-pod-1.0.0-healthy.png)
+
+---
+
+## Lab de l'Après-Midi — Stratégies Blue-Green et Canary
+
+### 1. Stratégie Blue-Green (1.0.0 ➔ 1.1.0)
+
+#### Journal des Déploiements Blue-Green
+
+| ID | Date & Heure | Version | Action Git | Validateur | Statut Argo CD / Rollout | Résultat observe.sh |
+|---|---|---|---|---|---|---|
+| **#5** | 07/10/2026 14:25 | `1.0.0` (Blue-Green) | `6a24403` (PR #4) | Mouss / Yanis | **Synced** & **Healthy** (Rollout rev:1) | `40 version=1.0.0 http=200` |
+| **#6** | 07/10/2026 14:35 | `1.1.0` (Preview) | `b3de244` (PR #5) | Mouss / Yanis | **Suspended** (Pause voulue, 8 pods au total) | Prod : `1.0.0` / Preview : `1.1.0` |
+| **#7** | 07/10/2026 14:36 | `1.1.0` (Prod) | Commande `kubectl argo rollouts promote` | Manuel | **Healthy** (rev:2 actif, rev:1 coupé après 30s) | `40 version=1.1.0 http=200` |
+
+#### Comment ça s'est passé :
+On a remplacé notre `deployment.yaml` par le `rollout.yaml` de Blue-Green, avec deux services : `taskflow` pour la prod et `taskflow-preview` pour tester la nouvelle version. On a mis `autoPromotionEnabled: false` pour pas que ça bascule tout seul.
+
+Quand on a mergé la PR pour passer en 1.1.0, Argo CD a déployé la nouvelle version mais s'est mis en pause (**Suspended**). C'est normal :
+- On a eu **8 pods qui tournent en même temps** (4 anciens en 1.0.0 et 4 nouveaux en 1.1.0).
+- Quand on a lancé `./scripts/observe.sh taskflow`, la prod répondait toujours à 100% en 1.0.0.
+- Et avec `./scripts/observe.sh taskflow-preview`, on a pu tester la 1.1.0 tranquillement sans impacter les utilisateurs.
+
+Une fois qu'on a vu que la preview marchait nickel, j'ai tapé :
+```bash
+kubectl argo rollouts promote taskflow -n taskflow
+```
+La prod a basculé d'un coup sur la 1.1.0 (`40 version=1.1.0 http=200`). Les anciens pods en 1.0.0 sont restés en vie pendant 30 secondes au cas où on voulait revenir en arrière, puis se sont coupés tout seuls.
+
+#### Preuves Visuelles Blue-Green :
+- **Mise en place du Rollout Blue-Green :**  
+  ![Blue-Green setup](docs/screenshots/13-bluegreen-setup-synced.png)
+- **PR #4 validée et mergée :**  
+  ![PR Blue-Green setup](docs/screenshots/14-bluegreen-pr-setup-merged.png)
+- **Preview active (8 pods et statut Suspended) :**  
+  ![Blue-Green preview 8 pods](docs/screenshots/15-bluegreen-preview-8-pods-suspended.png)
+- **Test observe.sh (prod en 1.0.0 vs preview en 1.1.0) :**  
+  ![Blue-Green observe prod vs preview](docs/screenshots/16-bluegreen-observe-prod-vs-preview.png)
+- **Promotion vers la prod :**  
+  ![Blue-Green promote success](docs/screenshots/17-bluegreen-promote-success.png)
+- **Cluster après les 30s (les anciens pods sont coupés) :**  
+  ![Blue-Green healthy](docs/screenshots/18-bluegreen-after-promote-healthy.png)
