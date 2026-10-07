@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/VOTRE-PSEUDO/taskflow-gitops.git
+    repoURL: https://github.com/YanisHDD/taskflow-gitops.git
     targetRevision: main
     path: apps/taskflow
   destination:
