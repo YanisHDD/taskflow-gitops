@@ -1,11 +1,14 @@
-apiVersion: apps/v1
-kind: Deployment
+# Blue-Green : la nouvelle version démarre à côté de l'ancienne, sur le service
+# taskflow-preview. Le service taskflow (production) ne bascule qu'à la promotion.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: taskflow
   labels:
     app: taskflow
 spec:
   replicas: 4
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: taskflow
@@ -36,3 +39,9 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+  strategy:
+    blueGreen:
+      activeService: taskflow
+      previewService: taskflow-preview
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: 30
