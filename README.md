@@ -143,3 +143,82 @@ La prod a basculé d'un coup sur la 1.1.0 (`40 version=1.1.0 http=200`). Les anc
   ![Blue-Green promote success](docs/screenshots/17-bluegreen-promote-success.png)
 - **Cluster après les 30s (les anciens pods sont coupés) :**  
   ![Blue-Green healthy](docs/screenshots/18-bluegreen-after-promote-healthy.png)
+
+---
+
+### 2. Stratégie Canary (1.1.0 ➔ 2.0.0 ➔ 2.1.0 buggée)
+
+#### Journal des Déploiements Canary
+
+| ID | Date & Heure | Version | Action Git | Validateur | Statut Argo CD / Rollout | Résultat observe.sh |
+|---|---|---|---|---|---|---|
+| **#8** | 07/10/2026 15:03 | `1.1.0` (Canary Setup) | `7e4983f` (PR #8) | Mouss / Yanis | **Synced** & **Healthy** (Rollout Canary rev:2) | `40 version=1.1.0 http=200` |
+| **#9** | 07/10/2026 15:09 | `2.0.0` (Canary 25%) | `9d3312e` (PR #9) | Mouss / Yanis | **Suspended** / **Paused** (1 pod canary, 3 pods stables) | Split de trafic (ex: 31 en 1.1.0 / 9 en 2.0.0) |
+| **#10** | 07/10/2026 15:15 | `2.0.0` (Promotion 100%) | Commande `kubectl argo rollouts promote` | Manuel | **Healthy** (4 pods passés en 2.0.0 rev:3) | `40 version=2.0.0 http=200` |
+| **#11** | 07/10/2026 15:44 | `2.1.0` (Crash test) | `18c96db` (PR #10) | Mouss / Yanis | **Suspended** (Palier 25% actif) | `28 v2.0.0` / `8 v2.1.0` / `4 erreurs 500` ! |
+| **#12** | 07/10/2026 15:52 | `2.0.0` (Abort d'urgence) | Commande `kubectl argo rollouts abort` | Manuel (coupure d'urgence) | **Degraded** (Canary coupé, retour 100% stable) | `40 version=2.0.0 http=200` (sauvetage réussi) |
+
+#### Comment ça s'est passé :
+On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le service preview qui ne sert plus ici.
+1. **Le palier à 25% (version 2.0.0) :**
+   Quand on a déployé la 2.0.0, le Rollout s'est mis en pause automatique à 25%. Avec le `--watch`, on voyait bien 1 pod en version Canary (2.0.0) et 3 pods en version Stable (1.1.0).
+   En lançant `observe.sh`, on a eu plusieurs répartitions : d'abord 26 / 14, puis 31 / 9. Comme le disait le prof : *« Sans ingress ni service mesh, la part de trafic suit la proportion de pods : 4 réplicas → 25% = 1 pod sur 4. Un pourcentage précis demande un traffic router »*. C'est du round-robin K8s standard, et le 31 en 1.1.0 contre 9 en 2.0.0 colle quasiment pile aux 75% / 25% théoriques !
+2. **La montée vers 100% :**
+   J'ai lancé la promotion avec `kubectl argo rollouts promote taskflow -n taskflow`. La bascule vers 100% n'est pas instantanée : elle a pris environ 1 minute / 1 minute 30 parce que le manifest contient des pauses automatiques (pause de 60s au palier 50%, pause de 30s au palier 75%). La preuve se voit direct sur l'âge échelonné de nos 4 pods sur la capture : 6m21s, 114s, 53s et 22s !
+3. **Le crash test (version 2.1.0) et l'abort d'urgence :**
+   En déployant la version 2.1.0, le piège s'est déclenché au premier palier de 25% : alors que le pod était affiché tout vert (`Healthy`) par les probes Kubernetes, `observe.sh` a fait remonter direct des erreurs utilisateurs : **`4 version=aucune http=500`** !
+   Pour éviter d'impacter plus de monde, j'ai tout de suite tapé :
+   ```bash
+   kubectl argo rollouts abort taskflow -n taskflow
+   ```
+   L'effet a été immédiat : le pod 2.1.0 a été coupé (`ScaledDown`), et 100% des requêtes sont revenues instantanément sur la version stable 2.0.0 (`40 version=2.0.0 http=200`). Le rollout est passé en statut `Degraded`.
+
+---
+
+### 3. Réponses aux Questions d'Analyse (Livrable Après-Midi)
+
+#### A. « Blue-Green ou Canary pour TaskFlow ? » (Risque vs Coût)
+- **Niveau coût / ressources :**  
+  - Le **Blue-Green** est plus cher : il double temporairement les ressources (2× pods en simultané, soit 8 pods au lieu de 4). Sur un gros cluster avec beaucoup de CPU/RAM, ça coûte le double en infrastructure pendant les bascules.
+  - Le **Canary** est beaucoup plus économe : il n'ajoute que les pods nécessaires par palier (1 pod en plus à 25%), donc il consomme à peine 1.25× les ressources.
+- **Niveau risque :**  
+  - Le **Blue-Green** protège 100% des utilisateurs avant la bascule grâce au service preview (`taskflow-preview`), mais la bascule est binaire (tout ou rien) : si un bug passe à travers les tests de preview, 100% des utilisateurs se le prennent d'un coup.
+  - Le **Canary** expose une petite part d'utilisateurs réels au bug (ici 25% ont vu les erreurs 500 sur la 2.1.0), mais il permet de limiter la casse et de couper en urgence (`abort`) avant que 100% des clients ne soient touchés.
+- **Verdict pour TaskFlow :**  
+  Pour TaskFlow, **Canary** est le choix le plus pertinent car l'application est légère et le Canary permet de valider le comportement avec du vrai trafic par petits paliers sans doubler la facture d'hébergement. Si le métier refuse catégoriquement qu'un seul utilisateur voie une erreur, on privilégiera Blue-Green.
+
+#### B. « Pendant un canary, vous faites un abort. Que montrent le Rollout, Argo CD et Git, et que faut-il faire ensuite ? »
+- **Ce que montre le Rollout :** Il affiche le statut **`Degraded`**. Il a mis la révision Canary à l'écart (`ScaledDown`) et a réactivé 100% du trafic sur l'ancienne révision stable.
+- **Ce que montre Argo CD :** Il affiche l'application en statut **`Degraded`** (car la ressource Rollout dans le cluster est en échec d'avancement).
+- **Ce que montre Git :** Sur Git, la branche `main` contient toujours le commit qui demande de déployer l'image buggée `2.1.0` ! Le cluster et Git ne sont donc plus alignés.
+- **Ce qu'il faut faire ensuite :** Il faut impérativement faire un **`git revert`** (ou une Pull Request de rollback) sur Git pour remettre l'image `2.0.0` sur `main`. Sinon, au prochain sync automatique d'Argo CD ou au prochain déploiement, Argo CD essaiera à nouveau d'appliquer la 2.1.0 buggée. C'est la règle d'or du GitOps : Git doit toujours être corrigé pour refléter l'état voulu.
+
+---
+
+### Preuves Visuelles Canary :
+- **PR #8 de mise en place Canary :**  
+  ![Canary setup PR](docs/screenshots/19-canary-setup-pr-merged.png)
+- **Rollout Canary initial (rev:2 actif) :**  
+  ![Canary setup synced](docs/screenshots/20-canary-setup-synced.png)
+- **Tableau de bord --watch au palier 25% (1 pod canary, 3 stable) :**  
+  ![Canary watch 25](docs/screenshots/21-canary-25-watch.png)
+- **Trafic partagé à 25% (26 en v1.1.0 / 14 en v2.0.0) :**  
+  ![Canary observe split](docs/screenshots/22-canary-25-observe-split.png)
+- **Argo CD suspended pendant le palier :**  
+  ![Canary tree suspended](docs/screenshots/23-canary-tree-suspended.png)
+- **Tests répétés sur observe.sh (31 en v1.1.0 / 9 en v2.0.0) :**  
+  ![Canary multiple observe](docs/screenshots/24-canary-multiple-observe-split.png)
+- **Déploiement 100% réussi avec pods échelonnés :**  
+  ![Canary 100 percent healthy](docs/screenshots/25-canary-100-percent-healthy.png)
+- **PR #10 de l'image 2.1.0 mergée :**  
+  ![Canary 2.1.0 PR](docs/screenshots/26-canary-2.1.0-pr-merged.png)
+- **Argo CD suspended en 2.1.0 :**  
+  ![Canary 2.1.0 suspended](docs/screenshots/27-canary-2.1.0-argocd-suspended.png)
+- **Pod 2.1.0 trompeur affiché Healthy par K8s :**  
+  ![Canary 2.1.0 pod healthy](docs/screenshots/28-canary-2.1.0-pod-healthy.png)
+- **Détection des erreurs HTTP 500 sur observe.sh :**  
+  ![Canary HTTP 500](docs/screenshots/29-canary-2.1.0-http500-errors.png)
+- **Abort d'urgence et retour instantané à 100% en 2.0.0 :**  
+  ![Canary abort and recovery](docs/screenshots/30-canary-abort-and-recovery.png)
+- **Rollout en statut Degraded après l'abort :**  
+  ![Canary rollout degraded](docs/screenshots/31-canary-rollout-degraded-status.png)
