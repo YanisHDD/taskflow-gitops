@@ -1,6 +1,4 @@
-# Canary : la nouvelle version reçoit une part croissante du trafic.
-# Sans maillage de service, la part de trafic suit la proportion de pods :
-# 4 réplicas → 25 % = 1 pod sur 4.
+
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
@@ -20,7 +18,7 @@ spec:
     spec:
       containers:
         - name: taskflow
-          image: ghcr.io/9m7fjfpv9k-cyber/taskflow:1.1.0
+          image: ghcr.io/9m7fjfpv9k-cyber/taskflow:2.0.0
           ports:
             - name: http
               containerPort: 8000
