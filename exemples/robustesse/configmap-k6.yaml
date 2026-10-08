@@ -1,0 +1,29 @@
+# Le scénario de test de charge, exécuté par k6 pendant le canary.
+# Les seuils (thresholds) traduisent notre exigence de robustesse :
+#   - moins de 2 % de requêtes en erreur
+#   - 95 % des réponses en moins de 250 ms
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-robustesse
+data:
+  robustesse.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+
+    export const options = {
+      vus: 5,
+      duration: '30s',
+      thresholds: {
+        http_req_failed: ['rate<0.02'],
+        http_req_duration: ['p(95)<250'],
+      },
+    };
+
+    const TARGET = __ENV.TARGET || 'http://taskflow-canary';
+
+    export default function () {
+      const res = http.get(`${TARGET}/tasks`);
+      check(res, { 'statut 200': (r) => r.status === 200 });
+      sleep(0.2);
+    }
