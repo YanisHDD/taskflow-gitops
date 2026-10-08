@@ -8,7 +8,7 @@ CIBLE="${1:-http://taskflow}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCENARIO="${SCRIPT_DIR}/../exemples/robustesse/configmap-k6.yaml"
 
-echo "Test de charge k6 sur ${CIBLE} (30 s, 5 utilisateurs virtuels)..."
+echo "Test de charge k6 sur ${CIBLE} (60 s, 5 utilisateurs virtuels)..."
 awk '/robustesse.js: \|/{f=1; next} f{sub(/^    /, ""); print}' "${SCENARIO}" \
   | kubectl -n taskflow run "k6-$(date +%s)" --rm -i --restart=Never --quiet \
       --image=grafana/k6:latest --image-pull-policy=IfNotPresent \
