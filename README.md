@@ -233,7 +233,7 @@ On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le s
 
 Bienvenue sur le journal de bord du Jour 3 ! Aujourd'hui, l'objectif est d'amener notre chaîne GitOps à **décider seule et prouver ses choix**. Plus besoin d'un humain qui panique devant des dashboards : le pipeline teste la robustesse de chaque nouvelle version, détecte les anomalies sous charge, coupe immédiatement le trafic toxique et sauve la production en totale autonomie.
 
-> 🧭 **Accès direct J3 :** [1. Synthèse Déploiements](#1-synthèse-du-journal-des-déploiements-jour-3) · [2. Déroulement Pas-à-Pas](#2-étape-par-étape--comment-on-a-construit-la-chaîne-autonome) · [Tableau des 4 Preuves](#tableau-récapitulatif-de-la-chaîne-de-preuves-slide-9) · [3. Postmortem v2.1.0](#3-postmortem-de-lincident-v210) · [4. Galerie Visuelle J3](#4-galerie-des-preuves-visuelles-jour-3)
+> 🧭 **Accès direct J3 :** [1. Synthèse Déploiements](#1-synthèse-du-journal-des-déploiements-jour-3) · [2. Déroulement Pas-à-Pas](#2-étape-par-étape--comment-on-a-construit-la-chaîne-autonome) · [Tableau des 4 Preuves](#tableau-récapitulatif-de-la-chaîne-de-preuves-slide-9) · [3. Postmortem v2.1.0](#3-postmortem-de-lincident-v210) · [4. Galerie Visuelle J3 Matin](#4-galerie-des-preuves-visuelles-jour-3) · [5. Lab C : Mini-PSSI & Quality Gates](#jour-3-après-midi--mini-pssi-policy-as-code--quality-gates-lab-c)
 
 ---
 
@@ -405,3 +405,114 @@ Pour établir notre postmortem sans reproche, nous avons réuni les 4 preuves of
   ![Argo CD 100% Healthy 2.2.0](docs/screenshots/46-canary-2.2.0-argocd-100-percent-healthy.png)
 - **Preuve d'image v2.2.0 : Détail du pod `taskflow-7ddd57d788-vs6xw` actif et Healthy en version 2.2.0 :**  
   ![Pod 2.2.0 Healthy](docs/screenshots/47-argocd-pod-2.2.0-healthy.png)
+
+---
+
+## Jour 3 Après-Midi — Mini-PSSI, Policy-as-Code & Quality Gates (Lab C)
+
+Cet après-midi, nous avons transformé la sécurité d'un simple document texte en **garde-fous automatiques et bloquants** dans notre chaîne d'intégration continue (*Policy-as-Code*).  
+Aucune image non tracée, aucun conteneur sans limite de ressources et aucun pod s'exécutant avec les privilèges `root` ne peut désormais être introduit en production : le pipeline CI (GitHub Actions) combiné au ruleset de protection de branche bloque systématiquement le merge.
+
+---
+
+### 1. Tableau Récapitulatif de la Mini-PSSI TaskFlow (Livrable Officiel)
+
+Conformément aux exigences de la Mini-PSSI TaskFlow (Slide 14 & 17), voici la matrice complète de nos contrôles de sécurité :
+
+| Règle | Exigence | Justification Sécurité | Outil de contrôle | Implémentation / Fichier | Statut & Preuve |
+|---|---|---|---|---|---|
+| **PSSI-R1** | Toute image a un tag explicite, **jamais `latest`** ni sans tag | Traçabilité absolue : savoir exactement quelle version tourne et garantir des rollbacks reproductibles | `conftest` (Rego / OPA) | `policies/kubernetes.rego` (`image_a_tag`) | **Actif & Bloquant** (PR #19 bloquée en rouge, Preuve 50) |
+| **PSSI-R2** | Les images proviennent uniquement du registre homologué (`ghcr.io/9m7fjfpv9k-cyber/`) | Maîtrise de la chaîne d'approvisionnement logicielle : interdire les images externes non auditées | `conftest` (Rego / OPA) | `policies/kubernetes.rego` (`registre_autorise`) | **Actif & Bloquant** |
+| **PSSI-R3** | Chaque conteneur déclare une limite de mémoire (`resources.limits.memory`) | Éviter le déni de service de l'hôte (OOMKill généralisé) : aucun pod ne doit épuiser le nœud hôte | `conftest` (Rego / OPA) | `policies/kubernetes.rego` (Règle rédigée par le binôme) | **Validé** (`memory: 256Mi` dans `rollout.yaml`) |
+| **PSSI-R4** | Les pods ne tournent jamais en root (`securityContext.runAsNonRoot: true`) | Principe du moindre privilège : limiter le rayon d'impact (*blast radius*) en cas d'évasion de conteneur | `conftest` (Rego / OPA) | `policies/kubernetes.rego` (Règle rédigée par le binôme) + `rollout.yaml` | **Validé** (Échec initial Preuve 48, puis corrigé et validé Preuve 49) |
+| **PSSI-R5** | Aucune vulnérabilité `HIGH` ou `CRITICAL` corrigeable dans les images déployées | Hygiène logicielle stricte : interdire la mise en production de CVEs connues et réparables | `Trivy` (Aqua Security) | `.github/workflows/pssi.yml` (Scan automatique des manifests) | **Validé** (Scan réussi, exceptions documentées dans `.trivyignore`) |
+
+---
+
+### 2. Gestion des Exceptions et Dérogations (`.trivyignore`)
+
+La politique PSSI stipule qu'aucune exception n'est tolérée de manière informelle :  
+> *« Toute exception doit être écrite, justifiée, datée et limitée dans le temps (fichier `.trivyignore` commenté pour PSSI-R5), et validée en PR. »*
+
+Lors du scan de l'image de production `ghcr.io/9m7fjfpv9k-cyber/taskflow:2.2.0`, Trivy a mis en évidence des vulnérabilités de sévérité `HIGH` portées par des dépendances Python transitives (`starlette` et `urllib3`). Afin de maintenir la gouvernance de sécurité sans bloquer le pipeline de manière opaque, nous avons créé le fichier [`.trivyignore`](file:///.trivyignore) dûment renseigné :
+
+```ini
+# Exceptions PSSI-R5 - TaskFlow 2.2.0
+# Date : 08/10/2026 | Responsables : YanisHDD & hping404
+# Justification : Vulnérabilités de dépendances transitives Python (starlette, urllib3)
+# Correctif prévu : Prochaine release applicative 2.3.0
+
+CVE-2025-62727
+CVE-2026-48818
+CVE-2026-54283
+CVE-2025-66418
+CVE-2025-66471
+CVE-2026-21441
+CVE-2026-44431
+CVE-2026-97687
+CVE-2026-97689
+```
+
+Grâce à cette dérogation tracée et versionnée sous Git, Trivy ignore uniquement ces CVEs documentées et valide la livraison sans compromettre la détection de futures régressions.
+
+---
+
+### 3. Preuves Visuelles des Quality Gates PSSI (Galerie Lab C)
+
+#### Preuve 48 : Échec attendu de `conftest` avant correction de la règle R4
+Lors de la mise en place de la règle Rego PSSI-R4, notre `rollout.yaml` ne contenait pas encore la directive `runAsNonRoot: true`. La commande `conftest test apps/ --policy policies/` a immédiatement échoué sur 1 test, confirmant l'efficacité du détecteur :  
+![Conftest PSSI-R4 Fail](docs/screenshots/48-conftest-pssi-r4-fail.png)
+
+#### Preuve 49 : Succès des deux Quality Gates sur la Pull Request #18
+Après ajout de `securityContext.runAsNonRoot: true` dans le manifest et ajout du fichier `.trivyignore`, nous avons ouvert la PR [#18](https://github.com/YanisHDD/taskflow-gitops/pull/18). Les deux jobs de sécurité GitHub Actions se sont exécutés avec succès :
+- `PSSI / PSSI manifests (conftest)` : **Succès en 6s** (25 tests sur 25 réussis)
+- `PSSI / PSSI images (Trivy)` : **Succès en 30s** (0 vulnérabilité non autorisée)  
+![PR 18 Checks Passed](docs/screenshots/49-pr18-pssi-checks-passed.png)
+
+#### Preuve 50 : Blocage strict d'une Pull Request non conforme (PR #19)
+Pour prouver que la chaîne protège activement le cluster, nous avons activé les deux contrôles comme **obligatoires (`Required`)** dans le ruleset GitHub `protect-main`, puis ouvert la PR [#19](https://github.com/YanisHDD/taskflow-gitops/pull/19) en spécifiant volontairement le tag interdit `image: ghcr.io/9m7fjfpv9k-cyber/taskflow:latest`.  
+Le résultat est sans appel :
+- Les checks sont immédiatement passés au **rouge** (`All checks have failed`).
+- GitHub a verrouillé le bouton de validation : **`Merging is blocked - At least 1 approving review is required / Required checks failed`**.  
+![PR 19 Merging Blocked](docs/screenshots/50-pr19-blocked-pssi-violation.png)
+
+---
+
+### 4. Exercice de Synthèse : Analyse de la Faille `GET /tasks/search` (Slide 18)
+
+#### Identification de la faille dans le code
+Dans le dépôt `cicd-fil-rouge` à la ligne 56 du fichier `app/main.py`, la recherche de tâches est implémentée ainsi :
+```python
+query = f"SELECT id, title, done FROM tasks WHERE title LIKE '%{q}%' ORDER BY id"
+```
+**Diagnostic :** Il s'agit d'une faille critique d'**Injection SQL (SQLi)** causée par l'interpolation directe du paramètre utilisateur non assaini `q` dans la chaîne de requête SQL, au lieu d'utiliser des requêtes paramétrées avec des curseurs sécurisés (`?` ou `:q`).
+
+#### Tableau comparatif : Qui trouve la faille de `GET /tasks/search` ?
+
+| Type de test | La trouve ? | Quelle information ? | Quand ? | Limite ? |
+|---|:---:|---|---|---|
+| **SAST** *(ex: Bandit, Semgrep)* | **Oui** *(code dans le dépôt)* | • **Ligne et fichier :** `app/main.py:56`<br>• **Type de faille :** Injection SQL (CWE-89)<br>• **Cause :** Utilisation d'une `f-string` non assainie dans un curseur SQL (`cursor.execute`) | **Tôt dans la CI (Shift-Left)**<br>Analyse statique du code source, sans exécution. | Risque de **faux positifs** (alerte sur du code théorique ou inactif) ; ne voit pas les erreurs de config d'infrastructure. |
+| **DAST** *(ex: OWASP ZAP)* | **Oui** *(la route existe)* | • **Point d'entrée :** Endpoint `GET /tasks/search`<br>• **Paramètre vulnérable :** Champ `q`<br>• **Preuve :** Réponse HTTP anormale au payload SQL (fuite de données ou erreur SQL 500)<br>• *(Ne donne aucune ligne de code)* | **Tardif (boîte noire)**<br>Sur l'application déployée en staging/recette. | **Vue externe aveugle :** Ne sait pas où est le code source pour corriger ; nécessite une app démarrée et des routes crawlées. |
+| **IAST** *(ex: Contrast Security)* | **Oui** *(la route a un test)* | • **Vue hybride complète :**<br>  1. Requête HTTP et payload injecté dans `q`<br>  2. Cheminement de la donnée non assainie (*taint analysis*)<br>  3. Ligne de code source exacte (`app/main.py:56`) | **Pendant les tests**<br>Une sonde instrumente le runtime pendant les tests d'intégration. | **Dépendance aux tests :** Totalement aveugle si la route n'est pas appelée par la suite de tests automatisés. |
+| **RASP** *(Protection Runtime)* | **Non** *(Ce n'est pas un test)* | Détecte et bloque l'attaque en direct au moment où la requête malveillante arrive sur le conteneur. | **En production**<br>Activé au runtime de l'application. | Mesure de défense active et non un outil de validation CI/CD ; impact potentiel sur la latence. |
+
+---
+
+### 5. Traçabilité & Pistes d'Optimisation du Pipeline (Slide 16 & 19)
+
+#### A. Les 4 Piliers de la Traçabilité
+1. **Qui et Pourquoi ?**  
+   Chaque modification passe par une Pull Request documentée, avec relecture et approbation obligatoire (`Required approval` par le binôme Yanis / Moustapha) et satisfaction des checks obligatoires.
+2. **Quoi ?**  
+   L'historique des commits Git immuables et les révisions d'Argo Rollouts (`rev:1` à `rev:4`) identifiant rigoureusement le tag et le SHA de chaque image déployée.
+3. **Quand ?**  
+   Les horodatages stricts des événements Kubernetes (conservés ~1h dans le cluster), les logs k6 et l'historique des commits Git.
+4. **Les écarts assumés ?**  
+   Toute dérogation est formellement consignée dans le fichier [`.trivyignore`](file:///.trivyignore), avec commentaire, date et nom des approbateurs.
+
+#### B. Deux Pistes Concrètes d'Optimisation
+1. **Mise en cache intelligente des bases de vulnérabilités Trivy :**  
+   Actuellement, Trivy télécharge la base de données de vulnérabilités à chaque exécution du job dans GitHub Actions (~30 secondes). En utilisant `actions/cache` sur le répertoire de base de données de Trivy, le temps de contrôle des images en PR passe sous la barre des **5 secondes**.
+2. **Filtrage par chemin (*Path Filtering*) pour éviter les builds inutiles :**  
+   Configurer les workflows GitHub Actions avec des filtres `paths:` (ex: `paths: ['apps/**', 'policies/**']`) afin de ne déclencher `conftest` et `Trivy` que si des fichiers Kubernetes ou des politiques de sécurité ont été touchés. Une modification exclusive de la documentation (`README.md`, captures d'écran) ne consommera ainsi aucune ressource CI inutile.
+
