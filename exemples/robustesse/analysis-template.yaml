@@ -1,0 +1,39 @@
+# Analyse automatique : un Job k6 lancé par Argo Rollouts.
+# Job réussi = seuils respectés = on continue. Job en échec = abandon du déploiement.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: robustesse-k6
+spec:
+  args:
+    - name: cible
+  metrics:
+    - name: test-de-charge-k6
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: k6
+                    image: grafana/k6:latest
+                    imagePullPolicy: IfNotPresent
+                    args: ["run", "/scripts/robustesse.js"]
+                    env:
+                      - name: TARGET
+                        value: "{{args.cible}}"
+                    volumeMounts:
+                      - name: scripts
+                        mountPath: /scripts
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 64Mi
+                      limits:
+                        memory: 256Mi
+                volumes:
+                  - name: scripts
+                    configMap:
+                      name: k6-robustesse

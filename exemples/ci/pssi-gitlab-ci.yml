@@ -1,0 +1,32 @@
+# Quality gates de la mini-PSSI (GitLab CI).
+# À copier à la racine du projet sous le nom .gitlab-ci.yml.
+stages:
+  - pssi
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+pssi-manifests:
+  stage: pssi
+  image:
+    name: openpolicyagent/conftest:v0.71.1
+    entrypoint: [""]
+  script:
+    - conftest test apps/ --policy policies/
+
+pssi-images:
+  stage: pssi
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  script:
+    - |
+      grep -rhoE 'image: *ghcr\.io/9m7fjfpv9k-cyber/[^ ]+' apps/ | awk '{print $2}' | sort -u > images.txt
+      cat images.txt
+      status=0
+      while read -r image; do
+        trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "${image}" || status=1
+      done < images.txt
+      exit "${status}"
