@@ -233,16 +233,18 @@ On a remplacé notre stratégie par Canary dans `rollout.yaml` et supprimé le s
 
 Bienvenue sur le journal de bord du Jour 3 ! Aujourd'hui, l'objectif est d'amener notre chaîne GitOps à **décider seule et prouver ses choix**. Plus besoin d'un humain qui panique devant des dashboards : le pipeline teste la robustesse de chaque nouvelle version, détecte les anomalies sous charge, coupe immédiatement le trafic toxique et sauve la production en totale autonomie.
 
+> 🧭 **Accès direct J3 :** [1. Synthèse Déploiements](#1-synthèse-du-journal-des-déploiements-jour-3) · [2. Déroulement Pas-à-Pas](#2-étape-par-étape--comment-on-a-construit-la-chaîne-autonome) · [Tableau des 4 Preuves](#tableau-récapitulatif-de-la-chaîne-de-preuves-slide-9) · [3. Postmortem v2.1.0](#3-postmortem-de-lincident-v210) · [4. Galerie Visuelle J3](#4-galerie-des-preuves-visuelles-jour-3)
+
 ---
 
 ### 1. Synthèse du Journal des Déploiements (Jour 3)
 
 | # | Heure | Version | Commit / PR | Auteurs / Réviseurs | Statut Argo CD / Rollout | Résultat & Analyse du trafic |
 |---|---|---|---|---|---|---|
-| **#13** | 08/10 11:19 | 2.0.0 (Setup Robustesse) | PR #13 (7434866) | Yanis / Moustapha | **Synced** & **Healthy** | Mise en place de l'AnalysisTemplate, ConfigMap k6 (60s) et suppression de Deployment. |
-| **#14** | 08/10 11:30 | 2.1.0 (Incident Canary) | PR #14 (8a1a691) | Yanis / Moustapha | **Degraded** & **RolloutAborted** | k6 détecte 29.44% d'erreurs 500 sur le canary. **Abort automatique immédiat** par Argo Rollouts ! |
-| **#15** | 08/10 12:07 | 2.0.0 (Rollback GitOps) | PR #15 (f31b6c) | Yanis / Moustapha | **Synced** & **Healthy** | git revert de la PR #14. Retour officiel de Git sur la version 2.0.0 stable. |
-| **#16** | 08/10 12:26 | 2.2.0 (Correctif Propre) | PR #16 (923d2c9) | Yanis / Moustapha | **Synced** & **Healthy** | AnalysisRun **100% réussi** sur le canary. Montée progressive (50%, 75%) à 100% sans accroc. |
+| **#13** | 08/10 11:19 | `2.0.0` (Setup Robustesse) | PR #13 (`7434866`) | Yanis / Moustapha | **Synced** & **Healthy** | Mise en place de l'AnalysisTemplate, ConfigMap k6 (60s) et suppression de Deployment. |
+| **#14** | 08/10 11:30 | `2.1.0` (Incident Canary) | PR #14 (`8a1a691`) | Yanis / Moustapha | **Degraded** & **RolloutAborted** | k6 détecte 29.44% d'erreurs 500 sur le canary. **Abort automatique immédiat** par Argo Rollouts ! |
+| **#15** | 08/10 12:07 | `2.0.0` (Rollback GitOps) | PR #15 (`bf31b6c`) | Yanis / Moustapha | **Synced** & **Healthy** | `git revert` de la PR #14. Retour officiel de Git sur la version 2.0.0 stable. |
+| **#16** | 08/10 12:26 | `2.2.0` (Correctif Propre) | PR #16 (`923d2c9`) | Yanis / Moustapha | **Synced** & **Healthy** | AnalysisRun **100% réussi** sur le canary. Montée progressive (50%, 75%) à 100% sans accroc. |
 
 ---
 
@@ -289,6 +291,16 @@ Pour établir notre postmortem sans reproche, nous avons réuni les 4 preuves of
 4. **Preuve 4 (Chronologie des événements Kubernetes) :** Les événements enregistrent la séquence exacte : MetricFailed ➔ AnalysisRunFailed ➔ RolloutAborted ➔ SwitchService ➔ ScalingReplicaSet.
    *(Note de l'équipe : désolé si le terminal de la capture n'est pas assez large pour afficher la ligne complète à droite, mais les colonnes TYPE, REASON et le message RolloutAborted sont parfaitement visibles !)*
 5. **Preuve supplémentaire (Horodatage de récupération) :** Sur l'interface Argo CD, le pod de secours taskflow-c6cf57bd6-zbbsg affiche l'heure de création exacte 11:31:28, attestant de la résilience à la seconde près.
+
+##### Tableau Récapitulatif de la Chaîne de Preuves (Slide 9 du cours)
+
+| # | Question du cours | Commande exacte | Fait mesuré & Constat technique | Preuve visuelle |
+|---|---|---|---|---|
+| **#1** | *Quelle révision, quelle image ?* | `kubectl argo rollouts get rollout taskflow -n taskflow` | Révision 6 (`taskflow:2.1.0`) en échec `✖ Degraded`. Repli 100% sur révision 5 (`2.0.0`) saine. | [Capture #36](docs/screenshots/36-canary-2.1.0-rollout-aborted-failed.png) |
+| **#2** | *Quelle métrique a échoué ?* | `kubectl -n taskflow describe analysisrun <nom>` | Métrique `test-de-charge-k6` passée en statut `Failed` (1 échec > 0 toléré). | [Capture #39](docs/screenshots/39-argocd-ui-degraded-analysisrun-failed.png) |
+| **#3** | *Ce que k6 a mesuré ?* | `kubectl -n taskflow logs job/<nom-job>` | **29.44 % d'erreurs 500** (174/591) sur `GET /tasks`, latence $p(95) = 315.74\text{ ms}$ (seuil 250 ms dépassé). | [Capture #37](docs/screenshots/37-canary-2.1.0-k6-logs-failed.png) |
+| **#4** | *La chronologie exacte ?* | `kubectl -n taskflow get events --sort-by=.lastTimestamp` | Événements : `MetricFailed` ➔ `AnalysisRunFailed` ➔ `RolloutAborted` ➔ `SwitchService` ➔ `ScalingReplicaSet`. *(Terminal tronqué à droite)* | [Capture #38](docs/screenshots/38-canary-2.1.0-events-rollout-aborted.png) |
+| **Bonus** | *Preuve de reprise immédiate ?* | Interface Argo CD (Détail pod) | Pod `taskflow-c6cf57bd6-zbbsg` (2.0.0) recréé à **11:31:28**, à la seconde exacte de l'abort. | [Capture #40](docs/screenshots/40-argocd-pod-2.0.0-recovery-timestamp.png) |
 
 ---
 
