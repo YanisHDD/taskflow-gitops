@@ -18,6 +18,8 @@ spec:
       labels:
         app: taskflow
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: taskflow
           image: ghcr.io/9m7fjfpv9k-cyber/taskflow:2.2.0

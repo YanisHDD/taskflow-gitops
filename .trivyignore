@@ -1,0 +1,14 @@
+# Exceptions PSSI-R5 - TaskFlow 2.2.0
+# Date: 2026-10-08 | Validé par YanisHDD & hping404
+# Justification: Vulnérabilités de dépendances transitives (starlette, urllib3)
+# Fix prévu: Prochaine version applicative 2.3.0
+
+CVE-2025-62727
+CVE-2026-48818
+CVE-2026-54283
+CVE-2025-66418
+CVE-2025-66471
+CVE-2026-21441
+CVE-2026-44431
+CVE-2026-97687
+CVE-2026-97689
