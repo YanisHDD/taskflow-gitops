@@ -1,0 +1,46 @@
+# Quality gates de la mini-PSSI (GitHub Actions).
+# À copier dans .github/workflows/pssi.yml, puis à rendre obligatoire dans le ruleset.
+name: PSSI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    name: PSSI manifests (conftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Installer conftest
+        run: |
+          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.71.1/conftest_0.71.1_Linux_x86_64.tar.gz | tar xz conftest
+          sudo mv conftest /usr/local/bin/conftest
+      - name: Vérifier les manifests (PSSI-R1 à R4)
+        run: conftest test apps/ --policy policies/
+
+  images:
+    name: PSSI images (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lister les images TaskFlow déployées
+        run: |
+          grep -rhoE 'image: *ghcr\.io/9m7fjfpv9k-cyber/[^ ]+' apps/ | awk '{print $2}' | sort -u > images.txt
+          echo "Images à scanner :"
+          cat images.txt
+      - name: Scanner les images (PSSI-R5)
+        run: |
+          status=0
+          while read -r image; do
+            echo "::group::Trivy ${image}"
+            docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:0.75.0 image \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "${image}" || status=1
+            echo "::endgroup::"
+          done < images.txt
+          exit "${status}"
