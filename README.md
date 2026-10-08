@@ -44,7 +44,7 @@ Argo CD surveille la branche \main\ et aligne le cluster dessus : pour modifier 
 ### 2. Analyse Technique & Délais
 
 - **Délai de déploiement (PR 2.0.0) :**
-  Normalement, Argo CD vérifie les changements sur Git toutes les 3 minutes. Pour aller plus vite et ne pas attendre la minute de polling, j'ai appuyé sur le bouton **Refresh** dans l'UI d'Argo CD. L'application est passée immédiatement en **OutOfSync**, puis s'est resynchronisée en moins de 5 secondes. Il a supprimé les anciens pods pour créer les nouveaux en \ev:2\, et on voit bien le message du commit ainsi que son hash affichés sur l'interface.
+  Normalement, Argo CD vérifie les changements sur Git toutes les 3 minutes. Pour aller plus vite et ne pas attendre la minute de polling, j'ai appuyé sur le bouton **Refresh** dans l'UI d'Argo CD. L'application est passée immédiatement en **OutOfSync**, puis s'est resynchronisée en moins de 5 secondes. Il a supprimé les anciens pods pour créer les nouveaux en `rev:2`, et on voit bien le message du commit ainsi que son hash affichés sur l'interface.
 - **Comportement face à la dérive (Ligne 5 du Lab) :**
   Quand j'ai fait la commande \kubectl -n taskflow scale deployment taskflow --replicas=1\, l'application est passée en **OutOfSync**. La correction automatique (\selfHeal\) a été tellement rapide que je n'ai même pas eu le temps de capturer l'écran rouge tellement ça va vite. Mais sur la capture des pods, on voit bien la preuve : il y a 1 pod à 7 minutes (celui qui est resté quand j'ai forcé à 1) et les 3 autres ont été recréés direct (1 minute) dès qu'Argo CD a détecté la dérive pour remettre les 4 replicas.
 
@@ -255,17 +255,16 @@ Bienvenue sur le journal de bord du Jour 3 ! Aujourd'hui, l'objectif est d'amene
 2. **L'ajustement clé du ConfigMap (Consigne prof) :**
    Dans le ConfigMap k6-robustesse, la durée de test était initialement fixée à 30s. Suite à la consigne du professeur pour éviter les faux positifs (notamment pour laisser le temps au trafic de se stabiliser et ne pas avorter prématurément sur un pic de démarrage), nous avons passé le test à **duration: '60s'**.
 3. **Le rôle de l'AnalysisTemplate :**
-   L'objet AnalysisTemplate (
-obustesse-k6) définit le contrat de test : il lance un Job Kubernetes basé sur l'image grafana/k6:latest, qui monte notre script k6 et attaque spécifiquement l'URL fournie en argument (http://taskflow-canary).
+   L'objet AnalysisTemplate (`robustesse-k6`) définit le contrat de test : il lance un Job Kubernetes basé sur l'image grafana/k6:latest, qui monte notre script k6 et attaque spécifiquement l'URL fournie en argument (http://taskflow-canary).
 4. **Validation de l'étape A.4 :**
-   Sur notre PR #13, nous avons supprimé tout manifest de Deployment pour ne conserver que notre Rollout. La commande demandée kubectl -n taskflow get analysistemplate,configmap,svc,rollout confirme que toutes les briques sont prêtes et que le service 	askflow-canary est disponible.
+   Sur notre PR #13, nous avons supprimé tout manifest de Deployment pour ne conserver que notre Rollout. La commande demandée kubectl -n taskflow get analysistemplate,configmap,svc,rollout confirme que toutes les briques sont prêtes et que le service taskflow-canary est disponible.
 
 ---
 
 #### Étape B · L'Incident v2.1.0 et l'Abort Automatique
 On a ensuite mergé la PR #14 pour livrer la version 2.1.0. En observant avec kubectl argo rollouts get rollout taskflow -n taskflow --watch, voici le film de l'incident :
 
-1. **Le palier 25% démarre :** Argo Rollouts crée 1 pod en version 2.1.0 (	askflow-df976ccb5-x6qnt) et bascule le sélecteur du service 	askflow-canary dessus.
+1. **Le palier 25% démarre :** Argo Rollouts crée 1 pod en version 2.1.0 (taskflow-df976ccb5-x6qnt) et bascule le sélecteur du service taskflow-canary dessus.
 2. **L'AnalysisRun entre en action :** Un Job Kubernetes éphémère démarre et lance k6 contre http://taskflow-canary/tasks.
 3. **La détection du piège :** La version 2.1.0 renvoie des erreurs HTTP 500 intermittentes sur sa logique métier (/tasks), alors que sa probe /health répondait 200 OK ! En 60 secondes, k6 enregistre :
    - **29.44 % de requêtes en erreur** (174 échecs sur 591).
@@ -277,7 +276,7 @@ On a ensuite mergé la PR #14 pour livrer la version 2.1.0. En observant avec ku
    Dès que l'AnalysisRun passe en échec, le **contrôleur Argo Rollouts** prend la main sans aucune action humaine :
    - Il émet l'événement Kubernetes **RolloutAborted**.
    - Il coupe le pod canary 2.1.0 (• ScaledDown).
-   - Il rebascule immédiatement 100% du trafic sur la version stable 2.0.0 en créant un 4e pod de secours (	askflow-c6cf57bd6-zbbsg horodaté à **11:31:28**).
+   - Il rebascule immédiatement 100% du trafic sur la version stable 2.0.0 en créant un 4e pod de secours (taskflow-c6cf57bd6-zbbsg horodaté à **11:31:28**).
    - **Bilan client : 0 utilisateur réel de production n'a été touché par les erreurs 500 !**
 
 ---
@@ -285,11 +284,11 @@ On a ensuite mergé la PR #14 pour livrer la version 2.1.0. En observant avec ku
 #### Étape C · La Chaîne de 4 Preuves (Slide 9 du cours)
 Pour établir notre postmortem sans reproche, nous avons réuni les 4 preuves officielles :
 1. **Preuve 1 (Rollout & Version) :** Le Rollout affiche le statut ✖ Degraded avec le message RolloutAborted: Metric 'test-de-charge-k6' assessed Failed. La révision 6 (2.1.0) est coupée et la révision 5 (2.0.0) reste active à 100%.
-2. **Preuve 2 (AnalysisRun en échec) :** La ressource 	askflow-df976ccb5-6-1 est marquée Failed suite au Job k6.
+2. **Preuve 2 (AnalysisRun en échec) :** La ressource taskflow-df976ccb5-6-1 est marquée Failed suite au Job k6.
 3. **Preuve 3 (Logs k6 - La cause racine) :** Le rapport final de k6 prouve les 29.44% d'échecs sur GET /tasks et le temps p95 de 315.74 ms.
 4. **Preuve 4 (Chronologie des événements Kubernetes) :** Les événements enregistrent la séquence exacte : MetricFailed ➔ AnalysisRunFailed ➔ RolloutAborted ➔ SwitchService ➔ ScalingReplicaSet.
    *(Note de l'équipe : désolé si le terminal de la capture n'est pas assez large pour afficher la ligne complète à droite, mais les colonnes TYPE, REASON et le message RolloutAborted sont parfaitement visibles !)*
-5. **Preuve supplémentaire (Horodatage de récupération) :** Sur l'interface Argo CD, le pod de secours 	askflow-c6cf57bd6-zbbsg affiche l'heure de création exacte 11:31:28, attestant de la résilience à la seconde près.
+5. **Preuve supplémentaire (Horodatage de récupération) :** Sur l'interface Argo CD, le pod de secours taskflow-c6cf57bd6-zbbsg affiche l'heure de création exacte 11:31:28, attestant de la résilience à la seconde près.
 
 ---
 
@@ -306,7 +305,7 @@ Pour établir notre postmortem sans reproche, nous avons réuni les 4 preuves of
 
 ---
 
-### 3. Postmortem Officiel de l'Incident v2.1.0 (Modèle Sans Reproche)
+### 3. Postmortem de l'Incident v2.1.0
 
 > **Sans reproche :** on cherche ce qui a permis l'erreur, pas qui l'a faite. Ce document est également archivé en version autonome dans [`docs/postmortem-2.1.0.md`](docs/postmortem-2.1.0.md) pour le dossier MSPR.
 
