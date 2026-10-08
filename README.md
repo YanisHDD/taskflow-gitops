@@ -304,11 +304,59 @@ Pour établir notre postmortem sans reproche, nous avons réuni les 4 preuves of
    - Le Rollout enchaîne automatiquement les paliers 50% et 75% (avec leurs pauses de 30s) sans aucune action manuelle.
    - L'application termine à 100% en version 2.2.0 avec le statut **✔ Healthy** !
 
-Le document d'analyse complet est disponible dans [docs/postmortem-2.1.0.md](docs/postmortem-2.1.0.md).
+---
+
+### 3. Postmortem Officiel de l'Incident v2.1.0 (Modèle Sans Reproche)
+
+> **Sans reproche :** on cherche ce qui a permis l'erreur, pas qui l'a faite. Ce document est également archivé en version autonome dans [`docs/postmortem-2.1.0.md`](docs/postmortem-2.1.0.md) pour le dossier MSPR.
+
+| Champ | Valeur |
+| --- | --- |
+| Date et heure | 08/10/2026 à 11:30 (11:30:24 – 11:31:28 heure locale) |
+| Version en cause | `ghcr.io/9m7fjfpv9k-cyber/taskflow:2.1.0` |
+| PR à l'origine | PR #14 (`feat: passage a l image 2.1.0 et ajout preuve A.4`) |
+| Durée d'exposition | **0 seconde pour les utilisateurs finaux** (seul le trafic de test k6 a touché le pod canary) |
+| Part du trafic touché | **0 % du trafic utilisateur réel** (100 % des requêtes de prod protégées sur la v2.0.0) |
+| Détecté par | **Test de charge automatique k6** (`AnalysisRun` / métrique `test-de-charge-k6`) |
+| Résolu par | **Abort automatique immédiat par le contrôleur Argo Rollouts**, puis `git revert` (PR #15) |
+
+#### Chronologie des Événements
+
+| Heure locale | Événement | Détail technique |
+| --- | --- | --- |
+| **11:30:09** | Merge de la PR #14 | La branche `main` passe sur l'image `taskflow:2.1.0`. |
+| **11:30:22** | Détection Argo CD | Synchronisation automatique vers la révision 6 du Rollout. |
+| **11:30:24** | Démarrage du Canary (25 %) | Création du pod `taskflow-df976ccb5-x6qnt`. Argo Rollouts bascule le sélecteur du service `taskflow-canary` vers ce pod. |
+| **11:30:24** | Déclenchement de l'`AnalysisRun` | Lancement du Job K8s `02d0294e-...test-de-charge-k6.1` basé sur le template `robustesse-k6`. |
+| **11:30:25** | Exécution du test de charge k6 | 5 utilisateurs virtuels bombardent `http://taskflow-canary/tasks` pendant 60 secondes. |
+| **11:31:22** | Franchissement des seuils k6 | k6 détecte **29.44 % d'erreurs HTTP 500** et une latence $p(95) = 315.74\text{ ms}$. k6 quitte avec une erreur de seuil (`thresholds crossed`). |
+| **11:31:28** | Échec de l'AnalysisRun | Le Job Kubernetes passe en statut `Failed`. L'AnalysisRun est marqué `Failed`. |
+| **11:31:28** | **Abort automatique (`RolloutAborted`)** | Le contrôleur Argo Rollouts avorte le déploiement : <br>1. Événement `RolloutAborted` émis.<br>2. Bascule immédiate du service canary (`SwitchService`) vers la révision 5 stable.<br>3. Destruction du pod 2.1.0 défaillant (`ScaledDown`).<br>4. Remise à l'échelle de la révision 5 (2.0.0) à 4 pods complets avec création du pod de secours `taskflow-c6cf57bd6-zbbsg` horodaté à 11:31:28. |
+| **12:07:53** | Rollback GitOps (`git revert`) | Approbation et merge de la PR #15 (`Revert PR #14`). Git repasse en 2.0.0, Argo CD resynchronise et le Rollout redevient **`Healthy`**. |
+| **12:26:04** | Livraison du correctif v2.2.0 | Merge de la PR #16 : l'AnalysisRun k6 valide 100 % de succès (code 200), promotion automatique progressive (50 %, 75 %) jusqu'à 100 % `Healthy`. |
+
+#### Composant défaillant et cause racine
+- **Quel composant a échoué ?** L'application TaskFlow v2.1.0 sur la route métier `GET /tasks` (174 erreurs sur 591 requêtes, $p(95) = 315.74\text{ ms}$).
+- **Pourquoi les probes Kubernetes ne l'ont-elles pas vu ?** Les sondes `readinessProbe` et `livenessProbe` interrogeaient uniquement le endpoint technique `/health`. Comme `/health` répondait `200 OK`, Kubernetes voyait le pod vert, alors que le code métier plantait en 500.
+- **Cause racine :** Régression logicielle introduite dans la 2.1.0 sur `/tasks`, invisible pour les probes basiques `/health`, mais immédiatement stoppée par le test de robustesse k6.
+
+#### Ce qui a bien fonctionné
+1. **La porte de qualité automatique :** La chaîne a tranché seule en moins de 60 secondes sans intervention humaine.
+2. **L'isolation totale du canary :** Grâce au service dédié `taskflow-canary`, aucun utilisateur réel n'a reçu d'erreur.
+3. **Le repli instantané :** En moins d'une seconde, Argo Rollouts a rétabli 100% du trafic sur la version saine 2.0.0.
+
+#### Actions correctives
+
+| Action | Responsable | Échéance | Statut |
+| --- | --- | --- | --- |
+| Déploiement du correctif `2.2.0` | Yanis / Moustapha | Immédiat | **Fait (v2.2.0 à 100% Healthy)** |
+| Alignement GitOps officiel par `git revert` (PR #15) | Yanis | Immédiat | **Fait (PR #15 mergée)** |
+| Tests d'intégration automatisés en amont dans la CI (J1) | Équipe DevOps | Fin de sprint | Planifié |
+| Documentation complète et archivage des preuves pour la MSPR | Yanis / Moustapha | J3 Matin | **Fait (`postmortem-2.1.0.md` & `README.md`)** |
 
 ---
 
-### 3. Galerie des Preuves Visuelles (Jour 3)
+### 4. Galerie des Preuves Visuelles (Jour 3)
 
 #### Partie A : Test Étalon et Ressources Initiales
 - **Seuils respectés sur le test étalon k6 (v2.0.0) :**  
