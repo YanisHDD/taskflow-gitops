@@ -344,3 +344,5 @@ Le document d'analyse complet est disponible dans [docs/postmortem-2.1.0.md](doc
   ![Argo CD Suspended Pauses](docs/screenshots/45-canary-2.2.0-argocd-suspended-pauses.png)
 - **Déploiement 100% Healthy et Synced en version 2.2.0 sur Argo CD :**  
   ![Argo CD 100% Healthy 2.2.0](docs/screenshots/46-canary-2.2.0-argocd-100-percent-healthy.png)
+- **Preuve d'image v2.2.0 : Détail du pod `taskflow-7ddd57d788-vs6xw` actif et Healthy en version 2.2.0 :**  
+  ![Pod 2.2.0 Healthy](docs/screenshots/47-argocd-pod-2.2.0-healthy.png)
