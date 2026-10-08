@@ -1,0 +1,405 @@
+=== PREUVE 1: ROLLOUT STATUS ===
+Name:            taskflow
+Namespace:       taskflow
+Status:          [31m✖[0m Degraded
+Message:         RolloutAborted: Rollout aborted update to revision 6: Step-based analysis phase error/failed: Metric "test-de-charge-k6" assessed Failed due to failed (1) > failureLimit (0)
+Strategy:        Canary
+  Step:          0/6
+  SetWeight:     0
+  ActualWeight:  0
+Images:          ghcr.io/9m7fjfpv9k-cyber/taskflow:2.0.0 ([32mstable[0m)
+Replicas:
+  Desired:       4
+  Current:       4
+  Updated:       0
+  Ready:         4
+  Available:     4
+
+NAME                                                                 KIND         STATUS        AGE    INFO
+⟳ taskflow                                                           Rollout      [31m✖[0m Degraded    21h    
+├──# revision:6                                                                                        
+│  ├──⧉ [33mtaskflow-df976ccb5[0m                                           ReplicaSet   [0m•[0m ScaledDown  19h    [33mcanary[0m
+│  └──α [0mtaskflow-df976ccb5-6-1[0m                                       AnalysisRun  [31m✖[0m Failed      3m43s  [31m✖[0m 1
+│     └──⊞ [0m02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1[0m  Job          [31m✖[0m Failed      3m43s  
+├──# revision:5                                                                                        
+│  └──⧉ [32mtaskflow-c6cf57bd6[0m                                           ReplicaSet   [32m✔[0m Healthy     20h    [32mstable[0m
+│     ├──□ taskflow-c6cf57bd6-bk2nh                                  Pod          [32m✔[0m Running     20h    ready:1/1,restarts:2
+│     ├──□ taskflow-c6cf57bd6-t4kvp                                  Pod          [32m✔[0m Running     20h    ready:1/1,restarts:2
+│     ├──□ taskflow-c6cf57bd6-hqwb8                                  Pod          [32m✔[0m Running     19h    ready:1/1,restarts:2
+│     └──□ taskflow-c6cf57bd6-zbbsg                                  Pod          [32m✔[0m Running     2m39s  ready:1/1
+├──# revision:2                                                                                        
+│  └──⧉ taskflow-78cdc8775b                                          ReplicaSet   [0m•[0m ScaledDown  20h    
+└──# revision:1                                                                                        
+   └──⧉ taskflow-5769dcb86c                                          ReplicaSet   [0m•[0m ScaledDown  21h    
+
+=== PREUVE 2: ANALYSISRUN DESCRIBE ===
+Name:         taskflow-df976ccb5-6-1
+Namespace:    taskflow
+Labels:       app=taskflow
+              rollout-type=Step
+              rollouts-pod-template-hash=df976ccb5
+              step-index=1
+Annotations:  rollout.argoproj.io/revision: 6
+API Version:  argoproj.io/v1alpha1
+Kind:         AnalysisRun
+Metadata:
+  Creation Timestamp:  2026-10-08T09:30:24Z
+  Generation:          15
+  Owner References:
+    API Version:           argoproj.io/v1alpha1
+    Block Owner Deletion:  true
+    Controller:            true
+    Kind:                  Rollout
+    Name:                  taskflow
+    UID:                   3a24cd7e-f9b4-4a30-94ff-ce5d9d4da0ca
+  Resource Version:        47917
+  UID:                     02d0294e-59c7-4e55-8298-1469fce133de
+Spec:
+  Args:
+    Name:   cible
+    Value:  http://taskflow-canary
+  Metrics:
+    Name:  test-de-charge-k6
+    Provider:
+      Job:
+        Metadata:
+        Spec:
+          Backoff Limit:  0
+          Template:
+            Metadata:
+            Spec:
+              Containers:
+                Args:
+                  run
+                  /scripts/robustesse.js
+                Env:
+                  Name:             TARGET
+                  Value:            {{args.cible}}
+                Image:              grafana/k6:latest
+                Image Pull Policy:  IfNotPresent
+                Name:               k6
+                Resources:
+                  Limits:
+                    Memory:  256Mi
+                  Requests:
+                    Cpu:     100m
+                    Memory:  64Mi
+                Volume Mounts:
+                  Mount Path:  /scripts
+                  Name:        scripts
+              Restart Policy:  Never
+              Volumes:
+                Config Map:
+                  Name:  k6-robustesse
+                Name:    scripts
+Status:
+  Completed At:  2026-10-08T09:31:28Z
+  Dry Run Summary:
+  Message:  Metric "test-de-charge-k6" assessed Failed due to failed (1) > failureLimit (0)
+  Metric Results:
+    Count:   1
+    Failed:  1
+    Measurements:
+      Finished At:  2026-10-08T09:31:28Z
+      Metadata:
+        Job - Name:       02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1
+        Job - Namespace:  taskflow
+      Phase:              Failed
+      Resume At:          2026-10-08T09:31:28Z
+      Started At:         2026-10-08T09:30:24Z
+    Name:                 test-de-charge-k6
+    Phase:                Failed
+  Phase:                  Failed
+  Run Summary:
+    Count:     1
+    Failed:    1
+  Started At:  2026-10-08T09:30:24Z
+Events:
+  Type     Reason             Age    From                 Message
+  ----     ------             ----   ----                 -------
+  Warning  MetricFailed       2m39s  rollouts-controller  Metric 'test-de-charge-k6' Completed. Result: Failed
+  Warning  AnalysisRunFailed  2m39s  rollouts-controller  Analysis Completed. Result: Failed
+
+=== PREUVE 3: K6 JOB LOGS ===
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: /scripts/robustesse.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 5 max VUs, 1m30s max duration (incl. graceful stop):
+              * default: 5 looping VUs for 1m0s (gracefulStop: 30s)
+
+
+running (0m01.0s), 5/5 VUs, 5 complete and 0 interrupted iterations
+default   [   2% ] 5 VUs  0m01.0s/1m0s
+
+running (0m02.0s), 5/5 VUs, 15 complete and 0 interrupted iterations
+default   [   3% ] 5 VUs  0m02.0s/1m0s
+
+running (0m03.0s), 5/5 VUs, 25 complete and 0 interrupted iterations
+default   [   5% ] 5 VUs  0m03.0s/1m0s
+
+running (0m04.0s), 5/5 VUs, 35 complete and 0 interrupted iterations
+default   [   7% ] 5 VUs  0m04.0s/1m0s
+
+running (0m05.0s), 5/5 VUs, 45 complete and 0 interrupted iterations
+default   [   8% ] 5 VUs  0m05.0s/1m0s
+
+running (0m06.0s), 5/5 VUs, 55 complete and 0 interrupted iterations
+default   [  10% ] 5 VUs  0m06.0s/1m0s
+
+running (0m07.0s), 5/5 VUs, 65 complete and 0 interrupted iterations
+default   [  12% ] 5 VUs  0m07.0s/1m0s
+
+running (0m08.0s), 5/5 VUs, 75 complete and 0 interrupted iterations
+default   [  13% ] 5 VUs  0m08.0s/1m0s
+
+running (0m09.0s), 5/5 VUs, 85 complete and 0 interrupted iterations
+default   [  15% ] 5 VUs  0m09.0s/1m0s
+
+running (0m10.0s), 5/5 VUs, 95 complete and 0 interrupted iterations
+default   [  17% ] 5 VUs  0m10.0s/1m0s
+
+running (0m11.0s), 5/5 VUs, 105 complete and 0 interrupted iterations
+default   [  18% ] 5 VUs  0m11.0s/1m0s
+
+running (0m12.0s), 5/5 VUs, 115 complete and 0 interrupted iterations
+default   [  20% ] 5 VUs  0m12.0s/1m0s
+
+running (0m13.0s), 5/5 VUs, 125 complete and 0 interrupted iterations
+default   [  22% ] 5 VUs  0m13.0s/1m0s
+
+running (0m14.0s), 5/5 VUs, 135 complete and 0 interrupted iterations
+default   [  23% ] 5 VUs  0m14.0s/1m0s
+
+running (0m15.0s), 5/5 VUs, 145 complete and 0 interrupted iterations
+default   [  25% ] 5 VUs  0m15.0s/1m0s
+
+running (0m16.0s), 5/5 VUs, 155 complete and 0 interrupted iterations
+default   [  27% ] 5 VUs  0m16.0s/1m0s
+
+running (0m17.0s), 5/5 VUs, 165 complete and 0 interrupted iterations
+default   [  28% ] 5 VUs  0m17.0s/1m0s
+
+running (0m18.0s), 5/5 VUs, 175 complete and 0 interrupted iterations
+default   [  30% ] 5 VUs  0m18.0s/1m0s
+
+running (0m19.0s), 5/5 VUs, 185 complete and 0 interrupted iterations
+default   [  32% ] 5 VUs  0m19.0s/1m0s
+
+running (0m20.0s), 5/5 VUs, 195 complete and 0 interrupted iterations
+default   [  33% ] 5 VUs  0m20.0s/1m0s
+
+running (0m21.0s), 5/5 VUs, 205 complete and 0 interrupted iterations
+default   [  35% ] 5 VUs  0m21.0s/1m0s
+
+running (0m22.0s), 5/5 VUs, 215 complete and 0 interrupted iterations
+default   [  37% ] 5 VUs  0m22.0s/1m0s
+
+running (0m21.3s), 5/5 VUs, 225 complete and 0 interrupted iterations
+default   [  38% ] 5 VUs  0m23.0s/1m0s
+
+running (0m22.3s), 5/5 VUs, 235 complete and 0 interrupted iterations
+default   [  40% ] 5 VUs  0m24.0s/1m0s
+
+running (0m23.3s), 5/5 VUs, 245 complete and 0 interrupted iterations
+default   [  42% ] 5 VUs  0m25.0s/1m0s
+
+running (0m24.3s), 5/5 VUs, 255 complete and 0 interrupted iterations
+default   [  43% ] 5 VUs  0m26.0s/1m0s
+
+running (0m25.3s), 5/5 VUs, 263 complete and 0 interrupted iterations
+default   [  45% ] 5 VUs  0m27.0s/1m0s
+
+running (0m26.3s), 5/5 VUs, 271 complete and 0 interrupted iterations
+default   [  47% ] 5 VUs  0m28.0s/1m0s
+
+running (0m27.3s), 5/5 VUs, 281 complete and 0 interrupted iterations
+default   [  48% ] 5 VUs  0m29.0s/1m0s
+
+running (0m28.3s), 5/5 VUs, 290 complete and 0 interrupted iterations
+default   [  50% ] 5 VUs  0m30.0s/1m0s
+
+running (0m29.3s), 5/5 VUs, 300 complete and 0 interrupted iterations
+default   [  52% ] 5 VUs  0m31.0s/1m0s
+
+running (0m30.3s), 5/5 VUs, 310 complete and 0 interrupted iterations
+default   [  53% ] 5 VUs  0m32.0s/1m0s
+
+running (0m31.3s), 5/5 VUs, 320 complete and 0 interrupted iterations
+default   [  55% ] 5 VUs  0m33.0s/1m0s
+
+running (0m32.3s), 5/5 VUs, 330 complete and 0 interrupted iterations
+default   [  57% ] 5 VUs  0m34.0s/1m0s
+
+running (0m33.3s), 5/5 VUs, 340 complete and 0 interrupted iterations
+default   [  58% ] 5 VUs  0m35.0s/1m0s
+
+running (0m34.3s), 5/5 VUs, 350 complete and 0 interrupted iterations
+default   [  60% ] 5 VUs  0m36.0s/1m0s
+
+running (0m35.3s), 5/5 VUs, 360 complete and 0 interrupted iterations
+default   [  62% ] 5 VUs  0m37.0s/1m0s
+
+running (0m36.3s), 5/5 VUs, 370 complete and 0 interrupted iterations
+default   [  63% ] 5 VUs  0m38.0s/1m0s
+
+running (0m37.3s), 5/5 VUs, 380 complete and 0 interrupted iterations
+default   [  65% ] 5 VUs  0m39.0s/1m0s
+
+running (0m38.3s), 5/5 VUs, 390 complete and 0 interrupted iterations
+default   [  67% ] 5 VUs  0m40.0s/1m0s
+
+running (0m39.3s), 5/5 VUs, 400 complete and 0 interrupted iterations
+default   [  68% ] 5 VUs  0m41.0s/1m0s
+
+running (0m40.3s), 5/5 VUs, 410 complete and 0 interrupted iterations
+default   [  70% ] 5 VUs  0m42.0s/1m0s
+
+running (0m41.3s), 5/5 VUs, 420 complete and 0 interrupted iterations
+default   [  72% ] 5 VUs  0m43.0s/1m0s
+
+running (0m42.3s), 5/5 VUs, 430 complete and 0 interrupted iterations
+default   [  73% ] 5 VUs  0m44.0s/1m0s
+
+running (0m43.3s), 5/5 VUs, 440 complete and 0 interrupted iterations
+default   [  75% ] 5 VUs  0m45.0s/1m0s
+
+running (0m44.3s), 5/5 VUs, 450 complete and 0 interrupted iterations
+default   [  77% ] 5 VUs  0m46.0s/1m0s
+
+running (0m45.3s), 5/5 VUs, 460 complete and 0 interrupted iterations
+default   [  78% ] 5 VUs  0m47.0s/1m0s
+
+running (0m46.3s), 5/5 VUs, 470 complete and 0 interrupted iterations
+default   [  80% ] 5 VUs  0m48.0s/1m0s
+
+running (0m47.3s), 5/5 VUs, 480 complete and 0 interrupted iterations
+default   [  82% ] 5 VUs  0m49.0s/1m0s
+
+running (0m48.3s), 5/5 VUs, 490 complete and 0 interrupted iterations
+default   [  83% ] 5 VUs  0m50.0s/1m0s
+
+running (0m49.3s), 5/5 VUs, 500 complete and 0 interrupted iterations
+default   [  85% ] 5 VUs  0m51.0s/1m0s
+
+running (0m50.3s), 5/5 VUs, 510 complete and 0 interrupted iterations
+default   [  87% ] 5 VUs  0m52.0s/1m0s
+
+running (0m51.3s), 5/5 VUs, 518 complete and 0 interrupted iterations
+default   [  88% ] 5 VUs  0m53.0s/1m0s
+
+running (0m52.3s), 5/5 VUs, 528 complete and 0 interrupted iterations
+default   [  90% ] 5 VUs  0m54.0s/1m0s
+
+running (0m51.6s), 5/5 VUs, 536 complete and 0 interrupted iterations
+default   [  92% ] 5 VUs  0m55.0s/1m0s
+
+running (0m52.6s), 5/5 VUs, 546 complete and 0 interrupted iterations
+default   [  93% ] 5 VUs  0m56.0s/1m0s
+
+running (0m53.6s), 5/5 VUs, 556 complete and 0 interrupted iterations
+default   [  95% ] 5 VUs  0m57.0s/1m0s
+
+running (0m54.6s), 5/5 VUs, 566 complete and 0 interrupted iterations
+default   [  97% ] 5 VUs  0m58.0s/1m0s
+
+running (0m55.6s), 5/5 VUs, 576 complete and 0 interrupted iterations
+default   [  98% ] 5 VUs  0m59.0s/1m0s
+
+running (0m56.6s), 5/5 VUs, 586 complete and 0 interrupted iterations
+default   [ 100% ] 5 VUs  1m00.0s/1m0s
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(95)<250' p(95)=315.74ms
+
+    http_req_failed
+    ✗ 'rate<0.02' rate=29.44%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 591    10.358979/s
+    checks_succeeded...: 70.55% 417 out of 591
+    checks_failed......: 29.44% 174 out of 591
+
+    ✗ statut 200
+      ↳  70% — ✓ 417 / ✗ 174
+
+    HTTP
+    http_req_duration..............: avg=304.77ms min=161.41µs med=307.17ms max=353.71ms p(90)=312.29ms p(95)=315.74ms
+      { expected_response:true }...: avg=306.51ms min=205.11µs med=308.35ms max=353.71ms p(90)=313.37ms p(95)=316.6ms 
+    http_req_failed................: 29.44% 174 out of 591
+    http_reqs......................: 591    10.358979/s
+
+    EXECUTION
+    iteration_duration.............: avg=509.06ms min=501.86ms med=508.22ms max=555.3ms  p(90)=513.52ms p(95)=516.72ms
+    iterations.....................: 591    10.358979/s
+    vus............................: 5      min=5          max=5
+    vus_max........................: 5      min=5          max=5
+
+    NETWORK
+    data_received..................: 82 kB  1.4 kB/s
+    data_sent......................: 45 kB  787 B/s
+
+
+
+
+running (0m57.1s), 0/5 VUs, 591 complete and 0 interrupted iterations
+default ✓ [ 100% ] 5 VUs  1m0s
+time="2026-10-08T09:31:22Z" level=error msg="thresholds on metrics 'http_req_duration, http_req_failed' have been crossed"
+
+=== PREUVE 4: KUBERNETES EVENTS ===
+LAST SEEN   TYPE      REASON                 OBJECT                                                               MESSAGE
+3m46s       Normal    Scheduled              pod/taskflow-df976ccb5-x6qnt                                         Successfully assigned taskflow/taskflow-df976ccb5-x6qnt to cicd-control-plane
+2m40s       Normal    Scheduled              pod/taskflow-c6cf57bd6-zbbsg                                         Successfully assigned taskflow/taskflow-c6cf57bd6-zbbsg to cicd-control-plane
+3m43s       Normal    Scheduled              pod/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2   Successfully assigned taskflow/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2 to cicd-control-plane
+32m         Normal    Scheduled              pod/k6-1791450110                                                    Successfully assigned taskflow/k6-1791450110 to cicd-control-plane
+32m         Normal    Pulled                 pod/k6-1791450110                                                    Container image "grafana/k6:latest" already present on machine
+32m         Normal    Created                pod/k6-1791450110                                                    Created container k6-1791450110
+32m         Normal    Started                pod/k6-1791450110                                                    Started container k6-1791450110
+14m         Normal    SwitchService          rollout/taskflow                                                     Switched selector for service 'taskflow-canary' from '' to 'c6cf57bd6'
+14m         Normal    SkipSteps              rollout/taskflow                                                     Rollback to stable ReplicaSets
+3m47s       Normal    Killing                pod/taskflow-c6cf57bd6-9wvbj                                         Stopping container taskflow
+3m47s       Normal    ScalingReplicaSet      rollout/taskflow                                                     Scaled up ReplicaSet taskflow-df976ccb5 (revision 6) from 0 to 1
+3m47s       Normal    ScalingReplicaSet      rollout/taskflow                                                     Scaled down ReplicaSet taskflow-c6cf57bd6 (revision 5) from 4 to 3
+3m47s       Normal    RolloutNotCompleted    rollout/taskflow                                                     Rollout not completed, started update to revision 6 (df976ccb5)
+3m47s       Normal    RolloutUpdated         rollout/taskflow                                                     Rollout updated to revision 6
+3m47s       Normal    SuccessfulCreate       replicaset/taskflow-df976ccb5                                        Created pod: taskflow-df976ccb5-x6qnt
+3m47s       Normal    SuccessfulDelete       replicaset/taskflow-c6cf57bd6                                        Deleted pod: taskflow-c6cf57bd6-9wvbj
+3m46s       Normal    Pulled                 pod/taskflow-df976ccb5-x6qnt                                         Container image "ghcr.io/9m7fjfpv9k-cyber/taskflow:2.1.0" already present on machine
+3m46s       Normal    Started                pod/taskflow-df976ccb5-x6qnt                                         Started container taskflow
+3m46s       Normal    Created                pod/taskflow-df976ccb5-x6qnt                                         Created container taskflow
+3m44s       Normal    SwitchService          rollout/taskflow                                                     Switched selector for service 'taskflow-canary' from 'c6cf57bd6' to 'df976ccb5'
+3m44s       Normal    AnalysisRunRunning     rollout/taskflow                                                     Step Analysis Run 'taskflow-df976ccb5-6-1' Status New: 'Running' Previous: ''
+3m44s       Normal    RolloutStepCompleted   rollout/taskflow                                                     Rollout step 1/6 completed (setWeight: 25)
+3m44s       Normal    SuccessfulCreate       job/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1         Created pod: 02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2
+3m43s       Normal    Created                pod/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2   Created container k6
+3m43s       Normal    Started                pod/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2   Started container k6
+3m43s       Normal    Pulled                 pod/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1-5p9q2   Container image "grafana/k6:latest" already present on machine
+2m43s       Warning   BackoffLimitExceeded   job/02d0294e-59c7-4e55-8298-1469fce133de.test-de-charge-k6.1         Job has reached the specified backoff limit
+2m40s       Normal    Killing                pod/taskflow-df976ccb5-x6qnt                                         Stopping container taskflow
+2m40s       Normal    SuccessfulCreate       replicaset/taskflow-c6cf57bd6                                        Created pod: taskflow-c6cf57bd6-zbbsg
+2m40s       Normal    ScalingReplicaSet      rollout/taskflow                                                     Scaled down ReplicaSet taskflow-df976ccb5 (revision 6) from 1 to 0
+2m40s       Normal    Started                pod/taskflow-c6cf57bd6-zbbsg                                         Started container taskflow
+2m40s       Normal    Created                pod/taskflow-c6cf57bd6-zbbsg                                         Created container taskflow
+2m40s       Normal    Pulled                 pod/taskflow-c6cf57bd6-zbbsg                                         Container image "ghcr.io/9m7fjfpv9k-cyber/taskflow:2.0.0" already present on machine
+2m40s       Warning   Unhealthy              pod/taskflow-df976ccb5-x6qnt                                         Readiness probe failed: Get "http://10.244.0.20:8000/health": dial tcp 10.244.0.20:8000: connect: connection refused
+2m40s       Normal    SuccessfulDelete       replicaset/taskflow-df976ccb5                                        Deleted pod: taskflow-df976ccb5-x6qnt
+2m40s       Warning   MetricFailed           analysisrun/taskflow-df976ccb5-6-1                                   Metric 'test-de-charge-k6' Completed. Result: Failed
+2m40s       Warning   AnalysisRunFailed      analysisrun/taskflow-df976ccb5-6-1                                   Analysis Completed. Result: Failed
+2m40s       Warning   AnalysisRunFailed      rollout/taskflow                                                     Step Analysis Run 'taskflow-df976ccb5-6-1' Status New: 'Failed' Previous: 'Running'
+2m40s       Warning   RolloutAborted         rollout/taskflow                                                     Rollout aborted update to revision 6: Step-based analysis phase error/failed: Metric "test-de-charge-k6" assessed Failed due to failed (1) > failureLimit (0)
+2m40s       Normal    SwitchService          rollout/taskflow                                                     Switched selector for service 'taskflow-canary' from 'df976ccb5' to 'c6cf57bd6'
+2m40s       Normal    ScalingReplicaSet      rollout/taskflow                                                     Scaled up ReplicaSet taskflow-c6cf57bd6 (revision 5) from 3 to 4
+2m39s       Warning   Unhealthy              pod/taskflow-c6cf57bd6-zbbsg                                         Readiness probe failed: Get "http://10.244.0.22:8000/health": dial tcp 10.244.0.22:8000: connect: connection refused
