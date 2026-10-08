@@ -1,4 +1,6 @@
-
+# Canary avec test de robustesse automatique.
+# Au palier de 25 %, Argo Rollouts lance un test de charge k6 sur les seuls pods
+# de la nouvelle version (service taskflow-canary). Test raté = abandon automatique.
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
@@ -40,12 +42,18 @@ spec:
               memory: 256Mi
   strategy:
     canary:
+      canaryService: taskflow-canary
       steps:
         - setWeight: 25
-        - pause: {}
+        - analysis:
+            templates:
+              - templateName: robustesse-k6
+            args:
+              - name: cible
+                value: http://taskflow-canary
         - setWeight: 50
         - pause:
-            duration: 60s
+            duration: 30s
         - setWeight: 75
         - pause:
             duration: 30s

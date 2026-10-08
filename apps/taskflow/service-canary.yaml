@@ -1,0 +1,15 @@
+# Service qui ne vise que les pods de la nouvelle version pendant un canary.
+# Argo Rollouts ajuste lui-même son sélecteur.
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-canary
+  labels:
+    app: taskflow
+spec:
+  selector:
+    app: taskflow
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
